@@ -30,7 +30,7 @@ if [ ! -f package.json ]; then
 fi
 
 # Install required packages
-echo "Installing dependencies: express, dotenv, cors, axios..."
-npm install express dotenv cors axios
+echo "Installing dependencies: dotenv, express, cors..."
+npm install dotenv express cors
 
 echo "Installation complete!"
