@@ -1,12 +1,11 @@
-import express from "express";
-import dotenv from "dotenv";
-import fs from "fs";
-import https from "https";
-import http from "http";
-import cors from "cors";
-import axios from "axios";
+const express = require("express");
+const dotenv = require("dotenv");
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const cors = require("cors");
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, ".env")});
 
 const app = express();
 
@@ -15,49 +14,51 @@ app.use(cors());
 app.use(express.json()); // parse JSON bodies
 
 // Read server env variables
-const HOST = process.env.HOST || "localhost";
-const PORT = process.env.PORT || 3000;
-const PROTOCOL = process.env.PROTOCOL || "http";
-const ENDPOINT = process.env.ENDPOINT || "/";
-const METHOD = (process.env.METHOD || "POST").toLowerCase();
+const HOST = process.env.HOST;
+const PORT = process.env.PORT;
+const ENDPOINT = process.env.ENDPOINT;
 
 // Read LLM target env variables
-const LLM_HOST = process.env.LLM_HOST || "localhost";
-const LLM_PORT = process.env.LLM_PORT || 8000;
-const LLM_PROTOCOL = process.env.LLM_PROTOCOL || "http";
-const LLM_ENDPOINT = process.env.LLM_ENDPOINT || "/";
-const LLM_METHOD = process.env.LLM_METHOD || "POST" ;
+const LLM_HOST = process.env.LLM_HOST;
+const LLM_PORT = process.env.LLM_PORT;
+const LLM_PROTOCOL = process.env.LLM_PROTOCOL;
+const LLM_ENDPOINT = process.env.LLM_ENDPOINT;
 
 // Proxy handler
-app[METHOD](ENDPOINT, async (req, res) => {
+app.post(ENDPOINT, async (req, res) => {
+  const llmUrl = `${LLM_PROTOCOL}://${LLM_HOST}:${LLM_PORT}${LLM_ENDPOINT}`;
+  
+  // Remove unsafe headers
+  const { host, connection, 'content-length': _, ...safeHeaders } = req.headers;
+
+  // Ensure JSON
+  safeHeaders['content-type'] = 'application/json';
+
   try {
-    const llmUrl = `${LLM_PROTOCOL}://${LLM_HOST}:${LLM_PORT}${LLM_ENDPOINT}`;
-    const response = await axios({
-      method: LLM_METHOD,
-      url: llmUrl,
-      data: req.body,
-      headers: req.headers, // forward headers
+    console.log("Proxying request to:", llmUrl);
+
+    const response = await fetch(llmUrl, {
+      method: "POST",
+      headers: safeHeaders,
+      body: JSON.stringify(req.body), // Node will calculate Content-Length automatically
     });
 
-    res.status(response.status).send(response.data);
+    const responseJson = await response.json();
+    res.status(response.status).send(responseJson);
   } catch (err) {
-    console.error("Error proxying request:", err.message);
-    res.status(err.response?.status || 500).send(err.response?.data || "Internal Server Error");
+    console.error(`Error proxying request to ${llmUrl}`, err);
+    res.status(500).send("Internal Server Error");
   }
 });
 
 // Start server based on protocol
-if (PROTOCOL === "https") {
-  const sslOptions = {
-    key: fs.readFileSync(process.env.SSL_KEY_PATH),
-    cert: fs.readFileSync(process.env.SSL_CERT_PATH),
-  };
+const sslOptions = {
+  key: fs.readFileSync(process.env.SSL_KEY_PATH),
+  cert: fs.readFileSync(process.env.SSL_CERT_PATH),
+};
 
-  https.createServer(sslOptions, app).listen(PORT, HOST, () => {
-    console.log(`HTTPS proxy server running at https://${HOST}:${PORT}${ENDPOINT} [${METHOD.toUpperCase()}]`);
-  });
-} else {
-  http.createServer(app).listen(PORT, HOST, () => {
-    console.log(`HTTP proxy server running at http://${HOST}:${PORT}${ENDPOINT} [${METHOD.toUpperCase()}]`);
-  });
-}
+https.createServer(sslOptions, app).listen(PORT, HOST, () => {
+  console.log(
+    `HTTPS proxy server running at https://${HOST}:${PORT}${ENDPOINT} [POST]`
+  );
+});
