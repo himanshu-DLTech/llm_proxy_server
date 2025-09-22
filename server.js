@@ -5,6 +5,12 @@ const path = require("path");
 const https = require("https");
 const cors = require("cors");
 
+const envPath = path.join(__dirname, ".env");
+if(!fs.existsSync(envPath)) { 
+  console.error(`Env not found. Make a env first at ${envPath} and refer to exmple.env for reference`); 
+  process.exit(1);
+}
+
 dotenv.config({ path: path.join(__dirname, ".env")});
 
 const app = express();
